@@ -133,7 +133,6 @@ def get_reservation_times(class_info):
 
 ############################ Data Processing ############################
 
-
 # Function to extract participant information
 def extract_participant_info(data):
     participants = []
@@ -235,9 +234,7 @@ def print_and_save_violators(violators, begin_date, end_date, isweekend):
 
 ############################ Execution ############################
 
-
 refresh_token()  # Ensure the token is valid before starting
-
 
 gotWeekdayData = False
 gotWeekendData = False
