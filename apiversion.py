@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 # Client credentials and scope
 CLIENT_ID = ""
-SCOPE = "<YOUR_SCOPE>"  # Set this to scope, still not sure what this should be
+SCOPE = "read:classes"  # Set this to scope, still not sure what this should be
 ACCESS_TOKEN = ""
 REFRESH_TOKEN = ""
 EXPIRES_AT = 0
