@@ -1,5 +1,7 @@
 Instructions for main_apiVersion.py, the browser version hasn't been written yet.
 
+Files login.json and tokens.json need to be created.
+
 login.json should look like:
 
     {
