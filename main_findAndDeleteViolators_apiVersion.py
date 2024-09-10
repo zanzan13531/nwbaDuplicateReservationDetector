@@ -173,28 +173,36 @@ def extract_class_info(data):
 
     return classes
 
-# Function to find reservation rule violators
+# Function to find reservation rule violators's excess reservations
 def find_reservation_violators(reservations):
     violators = {}
-    
+
     for user, reservation_infos in reservations.items():
         # Create a dictionary to track reservations per day
         reservations_per_day = {}
-        
+        violating_reservations = []
+
         for reservation_info in reservation_infos:
             # Convert time to a date (assuming ISO 8601 format)
             date = datetime.fromisoformat(reservation_info["start_time"].replace("Z", "+00:00")).date()
-            
+
             # Count the number of reservations on this date
             if date in reservations_per_day:
                 reservations_per_day[date] += 1
+                # If the user already has a reservation for this day, this reservation is a violation
+                violating_reservations.append(reservation_info)
             else:
                 reservations_per_day[date] = 1
-        
-        # Check if the user has more than 1 reservation on any day or more than 2 reservations in total
-        if len(reservation_infos) > 2 or any(count > 1 for count in reservations_per_day.values()):
-            violators[user] = reservation_infos
-    
+
+        # Check if the user has more than 2 reservations overall
+        if len(reservation_infos) > 2:
+            # Add any extra reservations after the second one as violations
+            violating_reservations.extend(reservation_infos[2:])
+
+        # Only add to violators if there are violations
+        if violating_reservations:
+            violators[user] = violating_reservations
+
     return violators
 
 # Function to print violators and write to a file
