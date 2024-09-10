@@ -178,6 +178,11 @@ def find_reservation_violators(reservations):
     violators = {}
 
     for user, reservation_infos in reservations.items():
+
+        # Check if the user is in the whitelist
+        if user in whilelist:
+            continue
+
         # Create a dictionary to track reservations per day
         reservations_per_day = {}
         violating_reservations = []
@@ -262,6 +267,10 @@ def delete_violators(violators, begin_date, end_date, isweekend):
 
 
 ############################ Execution ############################
+
+# list of names to whitelist, in the format of "firstname_lastname_id"
+whilelist = ["test_test_test",
+             "test_test_test2"]
 
 refresh_token()  # Ensure the token is valid before starting
 
