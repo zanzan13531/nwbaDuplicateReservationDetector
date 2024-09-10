@@ -111,7 +111,7 @@ def make_api_call(url):
 
 # Function to get the list of participants with their reservation times
 def get_reservation_times(class_info):
-    users = {}
+    users = {} # format of { name: [{reservation_start_time, class_id, reservation_id}] }
 
     for class_id, start_time in class_info.items():
         # For each class, get the participants
@@ -121,19 +121,20 @@ def get_reservation_times(class_info):
         if data:
             class_participants = extract_participant_info(data)
             
-            # Add the start time to each participant's reservation list
-            for user_name in class_participants:
-                if user_name in users:
-                    users[user_name].append(start_time)
+            for participant in class_participants:
+                name = participant.get("name", "")
+                reservation_id = participant.get("reservation_id", "")
+                
+                if name in users:
+                    users[name].append({"start_time": start_time, "class_id": class_id, "reservation_id": reservation_id})
                 else:
-                    users[user_name] = [start_time]
-
+                    users[name] = [{"start_time": start_time, "class_id": class_id, "reservation_id": reservation_id}]
     return users
 
 
 ############################ Data Processing ############################
 
-# Function to extract participant information
+# Function to extract participant information in an array of [{name, reservation_id}]
 def extract_participant_info(data):
     participants = []
     
@@ -145,11 +146,15 @@ def extract_participant_info(data):
         first_name = person.get('firstName', '')
         last_name = person.get('lastName', '')
         person_id = person.get('id', '')
+
+        formatted_name = ""
         
         # Format the name as "firstname_lastname_id"
         if first_name and last_name and person_id:
             formatted_name = f"{first_name}_{last_name}_{person_id}"
-            participants.append(formatted_name)
+        
+        reservation_id = element.get('reservation', {}).get('id', '')
+        participants.append({"name": formatted_name, "reservation_id": reservation_id})
     
     return participants
 
@@ -169,16 +174,16 @@ def extract_class_info(data):
     return classes
 
 # Function to find reservation rule violators
-def reservation_violators(reservations):
+def find_reservation_violators(reservations):
     violators = {}
     
-    for user, times in reservations.items():
+    for user, reservation_infos in reservations.items():
         # Create a dictionary to track reservations per day
         reservations_per_day = {}
         
-        for time in times:
+        for reservation_info in reservation_infos:
             # Convert time to a date (assuming ISO 8601 format)
-            date = datetime.fromisoformat(time.replace("Z", "+00:00")).date()
+            date = datetime.fromisoformat(reservation_info["start_time"].replace("Z", "+00:00")).date()
             
             # Count the number of reservations on this date
             if date in reservations_per_day:
@@ -187,47 +192,63 @@ def reservation_violators(reservations):
                 reservations_per_day[date] = 1
         
         # Check if the user has more than 1 reservation on any day or more than 2 reservations in total
-        if len(times) > 2 or any(count > 1 for count in reservations_per_day.values()):
-            violators[user] = times
+        if len(reservation_infos) > 2 or any(count > 1 for count in reservations_per_day.values()):
+            violators[user] = reservation_infos
     
     return violators
 
 # Function to print violators and write to a file
-def print_and_save_violators(violators, begin_date, end_date, isweekend):
+def delete_violators(violators, begin_date, end_date, isweekend):
+
+    deletion_logs = []
+    deleted = 0
+    failed = 0
+
+    for user, reservation_infos in violators.items():
+        for reservation_info in reservation_infos:
+            
+            reservation_time = reservation_info["start_time"]
+            utc_time = datetime.fromisoformat(reservation_time.replace("Z", "+00:00"))
+            pst = pytz.timezone('America/Los_Angeles')  # PST timezone
+            pst_time = utc_time.astimezone(pst)
+            formatted_time = pst_time.strftime("%Y-%m-%d %I:%M %p %Z")
+
+            class_id = reservation_info["class_id"]
+            reservation_id = reservation_info["reservation_id"]
+            deletion_logs.append(f"Deleting reservation at {formatted_time} for {user}, reservation_id: {reservation_id}, class_id: {class_id}")
+            print(f"Deleting reservation at {formatted_time} for {user}, reservation_id: {reservation_id}, class_id: {class_id}")
+
+            # Make the API call to delete the reservation
+            url = f"https://api.partners.daxko.com/api/v1/classes/{classId}/reservations/{reservationId}/cancellations"
+            response = requests.delete(url, headers=headers)
+
+            if response.status_code == 204:
+                print(f"Deleted reservation at {formatted_time} for {user}, reservation_id: {reservation_id}, class_id: {class_id}")
+                deletion_logs.append(f"Deleted reservation at {formatted_time} for {user}, reservation_id: {reservation_id}, class_id: {class_id}")
+                deleted += 1
+            else:
+                print(f"Failed to delete reservation at {formatted_time} for {user}, reservation_id: {reservation_id}, class_id: {class_id}")
+                print(f"Status Code: {response.status_code}, Response: {response.text}")
+                deletion_logs.append(f"Failed to delete reservation at {formatted_time} for {user}, reservation_id: {reservation_id}, class_id: {class_id}")
+                deletion_logs.append(f"Status Code: {response.status_code}, Response: {response.text}")
+                failed += 1
+
+    print(f"\nDeleted {deleted} reservations, failed to delete {failed} reservations")
+
     # Get the current timestamp to add to the filename
     current_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     # Generate the filename based on the begin_date, end_date, and current timestamp
     filename = ""
     if (isweekend):
-        filename = f"violators_{begin_date[:10]}_{end_date[:10]}_weekend_{current_timestamp}.txt"
+        filename = f"violators_deletionlog_{begin_date[:10]}_{end_date[:10]}_weekend_{current_timestamp}.txt"
     else:
-        filename = f"violators_{begin_date[:10]}_{end_date[:10]}_weekdays_{current_timestamp}.txt"
+        filename = f"violators_deletionlog_{begin_date[:10]}_{end_date[:10]}_weekdays_{current_timestamp}.txt"
 
     # Open the file for writing
     with open(filename, 'w') as file:
-        for user, times in violators.items():
-            # Print to console
-            print(f"{user}:")
-            # Write user to file
-            file.write(f"{user}:\n")
-
-            # Convert all times to PST and format them
-            formatted_times = []
-            for time in times:
-                # Assuming 'time' is a string in ISO 8601 format (UTC)
-                utc_time = datetime.fromisoformat(time.replace("Z", "+00:00"))
-                pst = pytz.timezone('America/Los_Angeles')  # PST timezone
-                pst_time = utc_time.astimezone(pst)
-                formatted_time = pst_time.strftime("%Y-%m-%d %I:%M %p %Z")
-                formatted_times.append(formatted_time)
-
-            # Join all formatted times into a single string and print them
-            formatted_time_str = ", ".join(formatted_times)
-            print(formatted_time_str)
-            
-            # Write times to file
-            file.write(f"  {formatted_time_str}\n")
+        for log in deletion_logs:
+            file.write(log + "\n")
     
     print(f"\nResults written to {filename}")
 
@@ -299,24 +320,20 @@ else:
     print(f"Failed to retrieve weekend classes. Status Code: {response_weekend.status_code}")
     print("Response:", response_weekend.text)
 
+# Process the data if it was successfully retrieved, and delete violators
+
 if (gotWeekdayData):
     class_id_list = extract_class_info(response_weekdays)
-    del response_weekdays
     reservation_dict = get_reservation_times(class_id_list)
-    del class_id_list
-    violators = reservation_violators(reservation_dict)
+    violators = find_reservation_violators(reservation_dict)
 
     print("Weekday Violoators: ")
-    print_and_save_violators(violators, begin_date_weekdays, end_date_weekdays, False)
+    delete_violators(violators, begin_date_weekdays, end_date_weekdays, False)
 
 if (gotWeekdayData):
     class_id_list = extract_class_info(response_weekend)
-    del response_weekend
     reservation_dict = get_reservation_times(class_id_list)
-    del class_id_list
-    violators = reservation_violators(reservation_dict)
+    violators = find_reservation_violators(reservation_dict)
 
     print("Weekend Violoators: ")
-    print_and_save_violators(violators, begin_date_weekend, end_date_weekend, True)
-
-# Can also presumably write code to delete the reservations of the violators
+    delete_violators(violators, begin_date_weekend, end_date_weekend, True)
