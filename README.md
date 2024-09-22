@@ -20,3 +20,6 @@ tokens.json should look like:
 First time running the data in tokens.json can be garbage data. 
 
 .gitignore set up to prevent these two files from being shared.
+
+API reference:
+https://docs.partners.daxko.com/openapi/ZenPlanner/v1/#tag/Classes/operation/get-class-attendances-by-classId
